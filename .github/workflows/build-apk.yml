@@ -1,0 +1,52 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack project
+        run: |
+          mkdir proj
+          unzip -q "$(ls *.zip | head -1)" -d proj
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare game assets
+        working-directory: proj
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js -o app/src/main/assets/three.min.js
+          sed 's#<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>#<script src="three.min.js"></script>#' game/index.html > app/src/main/assets/index.html
+
+      - name: Build APK
+        working-directory: proj
+        run: gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WarVillages-apk
+          path: proj/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp proj/app/build/outputs/apk/debug/app-debug.apk WarVillages.apk
+          gh release create "v2.${{ github.run_number }}" WarVillages.apk --title "War Villages 2.${{ github.run_number }}" --notes "Установочный файл War Villages для Android"
